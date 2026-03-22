@@ -70,7 +70,7 @@ You are NOT a replacement for professional help. You are here to listen, support
 
   // Using Groq API — FREE, no credit card needed
   // Get your free key at: https://console.groq.com → API Keys → Create
-  const GROQ_API_KEY = process.env.REACT_APP_GROQ_API_KEY;
+  const GROQ_API_KEY = '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';
 
   try {
     const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
