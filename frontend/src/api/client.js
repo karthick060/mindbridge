@@ -3,7 +3,7 @@
 // The "proxy" in package.json forwards /api/* → http://localhost:8000
 import axios from 'axios';
 
-const http = axios.create({ baseURL: '/api' });
+const http = axios.create({ baseURL: 'https://web-production-14b98.up.railway.app/api' });
 
 // ── Users ──────────────────────────────────────────────
 /** Ask the backend to generate a new anonymous ID */

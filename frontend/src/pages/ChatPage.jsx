@@ -306,7 +306,7 @@ export default function ChatPage({ userId }) {
   // WebSocket for real users (when backend is running)
   useEffect(() => {
     const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-    const ws = new WebSocket(`${proto}://${window.location.hostname}:8000/ws/chat/${activeRoom.id}/`);
+    const ws = new WebSocket(`wss://web-production-14b98.up.railway.app/ws/chat/${activeRoom.id}/`);
     wsRef.current = ws;
     ws.onmessage = (e) => {
       const data = JSON.parse(e.data);
