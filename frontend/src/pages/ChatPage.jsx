@@ -40,7 +40,7 @@ const getAIResponse = async (userMessage, roomLabel, conversationHistory) => {
   try {
     const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
-      headers: { 'Content-Type':'application/json', 'Authorization':`Bearer ${process.env.REACT_APP_GROQ_API_KEY || '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'}` },
+      headers: { 'Content-Type':'application/json', 'Authorization':`Bearer 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` },
       body: JSON.stringify({
         model: 'llama-3.3-70b-versatile', max_tokens: 300,
         messages: [
