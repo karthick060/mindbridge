@@ -368,8 +368,10 @@ export default function ChatPage({ userId }) {
       wsRef.current.send(JSON.stringify({ message: text, anon_id: userId }));
     }
 
-    // AI always responds — this is the key upgrade
-    setAiTyping(true);
+    // AI only responds if no other human is in the room
+const othersInRoom = currentMsgs.some(m => !m.isOwn && !m.isAI);
+if (othersInRoom) return;
+setAiTyping(true);
     await new Promise(r => setTimeout(r, 800 + Math.random() * 600)); // feels natural
     const aiReply = await getAIResponse(text, activeRoom.label, [...currentMsgs, userMsg]);
     setAiTyping(false);
