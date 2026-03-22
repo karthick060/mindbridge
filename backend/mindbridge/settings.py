@@ -1,18 +1,16 @@
 """
-MindBridge — Django Settings
-==============================
-Uses SQLite by default (no database setup required).
-All heavy AI models are optional — keyword fallback is built in.
+MindBridge — Django Settings (Production Ready for Railway)
 """
+import os
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# SECURITY — change this before deploying to production!
-SECRET_KEY = 'mindbridge-local-dev-secret-key-change-in-production-xyz789'
+SECRET_KEY = os.environ.get('SECRET_KEY', 'mindbridge-local-dev-secret-key-change-in-production-xyz789')
 
-DEBUG = True
-ALLOWED_HOSTS = ['*']  # Fine for local development
+DEBUG = os.environ.get('DEBUG', 'False') == 'True'
+
+ALLOWED_HOSTS = ['*']
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -21,11 +19,9 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    # Third-party
     'rest_framework',
     'corsheaders',
     'channels',
-    # MindBridge apps
     'apps.users',
     'apps.chat',
     'apps.moderation',
@@ -33,7 +29,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
-    'corsheaders.middleware.CorsMiddleware',  # Must be first
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -60,46 +56,48 @@ TEMPLATES = [{
     },
 }]
 
-# ── Database ─────────────────────────────────────────────
-# SQLite — works out of the box, no setup needed
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+# ── Database — PostgreSQL on Railway, SQLite locally ──────
+DATABASE_URL = os.environ.get('DATABASE_URL')
+if DATABASE_URL:
+    import urllib.parse
+    url = urllib.parse.urlparse(DATABASE_URL)
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': url.path[1:],
+            'USER': url.username,
+            'PASSWORD': url.password,
+            'HOST': url.hostname,
+            'PORT': url.port,
+        }
     }
-}
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+        }
+    }
 
-# To use PostgreSQL instead, replace the above with:
-# DATABASES = {
-#     'default': {
-#         'ENGINE': 'django.db.backends.postgresql',
-#         'NAME': 'mindbridge_db',
-#         'USER': 'postgres',
-#         'PASSWORD': 'yourpassword',
-#         'HOST': 'localhost',
-#         'PORT': '5432',
-#     }
-# }
-
-# ── WebSocket (Django Channels) ───────────────────────────
+# ── WebSocket ─────────────────────────────────────────────
 ASGI_APPLICATION = 'mindbridge.asgi.application'
 
-# In-memory layer — no Redis needed for local development
-CHANNEL_LAYERS = {
-    'default': {
-        'BACKEND': 'channels.layers.InMemoryChannelLayer',
+REDIS_URL = os.environ.get('REDIS_URL')
+if REDIS_URL:
+    CHANNEL_LAYERS = {
+        'default': {
+            'BACKEND': 'channels_redis.core.RedisChannelLayer',
+            'CONFIG': {'hosts': [REDIS_URL]},
+        }
     }
-}
+else:
+    CHANNEL_LAYERS = {
+        'default': {
+            'BACKEND': 'channels.layers.InMemoryChannelLayer',
+        }
+    }
 
-# For production with Redis, use:
-# CHANNEL_LAYERS = {
-#     'default': {
-#         'BACKEND': 'channels_redis.core.RedisChannelLayer',
-#         'CONFIG': {'hosts': [('127.0.0.1', 6379)]},
-#     }
-# }
-
-# ── CORS (allow React dev server to call Django) ──────────
+# ── CORS ──────────────────────────────────────────────────
 CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOW_CREDENTIALS = True
 
@@ -116,18 +114,11 @@ STATICFILES_STORAGE = 'whitenoise.storage.CompressedStaticFilesStorage'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# ── Console logging ───────────────────────────────────────
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
-    'formatters': {
-        'simple': { 'format': '[%(levelname)s] %(name)s: %(message)s' },
-    },
     'handlers': {
-        'console': { 'class': 'logging.StreamHandler', 'formatter': 'simple' },
+        'console': {'class': 'logging.StreamHandler'},
     },
-    'root': { 'handlers': ['console'], 'level': 'INFO' },
-    'loggers': {
-        'django': { 'handlers': ['console'], 'level': 'WARNING', 'propagate': False },
-    },
+    'root': {'handlers': ['console'], 'level': 'INFO'},
 }

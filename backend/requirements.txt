@@ -1,25 +1,9 @@
-# ─── Core Django ───────────────────────────────────────
 Django==4.2.9
 djangorestframework==3.14.0
 django-cors-headers==4.3.1
-
-# ─── WebSocket support ─────────────────────────────────
 channels==4.0.0
 daphne==4.0.0
-
-# ─── Database ──────────────────────────────────────────
-# SQLite is used by default (zero setup needed).
-# Uncomment psycopg2-binary to switch to PostgreSQL.
-# psycopg2-binary==2.9.9
-
-# ─── Static files ──────────────────────────────────────
 whitenoise==6.6.0
-
-# ─── AI / NLP  (optional — install for real AI) ────────
-# The app works without these using keyword-based fallback.
-# Run:  pip install transformers torch detoxify
-# transformers==4.37.2
-# torch==2.2.0
-# detoxify==0.5.2
-# textblob==0.18.0
-# nltk==3.8.1
+gunicorn==21.2.0
+psycopg2-binary==2.9.9
+channels-redis==4.1.0
