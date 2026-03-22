@@ -59,6 +59,7 @@ Your role:
 
 You are NOT a replacement for professional help. You are here to listen, support, and help people feel less alone.`;
 
+  // eslint-disable-next-line
   const messages = [
     ...conversationHistory.slice(-6).map(m => ({
       role: m.isAI ? 'assistant' : 'user',
@@ -69,7 +70,7 @@ You are NOT a replacement for professional help. You are here to listen, support
 
   // Using Groq API — FREE, no credit card needed
   // Get your free key at: https://console.groq.com → API Keys → Create
-  const GROQ_API_KEY = process.env.REACT_APP_GROQ_API_KEY;
+  const GROQ_API_KEY = 'PASTE_YOUR_GROQ_KEY_HERE';
 
   try {
     const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -374,7 +375,8 @@ export default function ChatPage({ userId }) {
     setAiTyping(false);
     addMessage({ id: Date.now()+1, isAI: true, text: aiReply, time: new Date().toISOString() });
 
-  }, [input, analyzing, userId, activeRoom, currentMsgs, addMessage]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [input, analyzing, userId, activeRoom.id, activeRoom.label, addMessage]);
 
   return (
     <div style={{ height:'100vh', display:'flex', background:'#080812', color:'#fff', fontFamily:"'DM Sans', sans-serif", paddingTop:66 }}>

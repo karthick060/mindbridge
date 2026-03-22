@@ -81,7 +81,7 @@ export default function DashboardPage() {
   const [clock,        setClock]        = useState(new Date());
   const [stats,        setStats]        = useState({ activeUsers:47, messagesToday:284, blockedMessages:12, highRiskAlerts:3 });
   const [hourly,       setHourly]       = useState(makeHourly);
-  const [roomData,     setRoomData]     = useState(makeRoomData);
+  const [roomData] = useState(makeRoomData); // eslint-disable-line
   const [newFlagPing,  setNewFlagPing]  = useState(false);
   const [sentimentData]                 = useState(BASE_SENTIMENT);
   const flagIdRef = useRef(10);

@@ -49,6 +49,7 @@ function BoxBreathing() {
       }
     }, 1000);
     return () => clearInterval(timerRef.current);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [running, phaseIndex]);
 
   const stop = () => {
