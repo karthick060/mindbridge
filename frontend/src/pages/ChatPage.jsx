@@ -189,7 +189,8 @@ export default function ChatPage({ userId }) {
     addMessage(userMsg);
     if (wsRef.current?.readyState === WebSocket.OPEN) wsRef.current.send(JSON.stringify({ message:text, anon_id:userId }));
 
-    const othersInRoom = currentMsgs.some(m => !m.isOwn && !m.isAI);
+    const SEED_USERS = ['CalmRiver_4821','GentleMoon_7392','QuietStar_2048','SoftLeaf_9312','BraveDawn_4401','WarmBrook_5543','ClearWave_3310'];
+const othersInRoom = currentMsgs.some(m => !m.isOwn && !m.isAI && !SEED_USERS.includes(m.user));
     if (othersInRoom) return;
     setAiTyping(true);
     await new Promise(r => setTimeout(r, 800 + Math.random()*600));
