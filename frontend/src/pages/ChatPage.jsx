@@ -256,29 +256,19 @@ export default function ChatPage({ userId }) {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [currentMsgs.length, activeRoom.id, aiTyping]);
 
-  // WebSocket
-  useEffect(() => {
-    const WS_BASE = process.env.REACT_APP_WS_URL || 'ws://localhost:8000';
-const ws = new WebSocket(`${WS_BASE}/ws/chat/${activeRoom.id}/`);
-    wsRef.current = ws;
-    ws.onmessage = (e) => {
-      const data = JSON.parse(e.data);
-      if (data.type === 'message' && data.anon_id !== userId) {
-        setAllMessages(prev => ({
-          ...prev,
-          [activeRoom.id]: [...(prev[activeRoom.id] || []), {
-            id:         Date.now(),
-            user:       data.anon_id,
-            text:       data.message,
-            time:       new Date().toISOString(),
-            sentiment:  data.sentiment,
-            risk_level: data.risk_level,
-          }]
-        }));
-      }
-    };
-    return () => ws.close();
-  }, [activeRoom.id, userId]);
+  // Poll for new messages every 3 seconds
+useEffect(() => {
+  const interval = setInterval(async () => {
+    try {
+      const data = await api.getRoomMessages(activeRoom.id);
+      const msgs = Array.isArray(data)
+        ? data.map(normalizeBackendMessage)
+        : (data.results || []).map(normalizeBackendMessage);
+      setAllMessages(prev => ({ ...prev, [activeRoom.id]: msgs }));
+    } catch {}
+  }, 3000);
+  return () => clearInterval(interval);
+}, [activeRoom.id]);
 
   const addMessage = useCallback((msg) => {
     setAllMessages(prev => ({
