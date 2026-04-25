@@ -333,7 +333,7 @@ api.saveAIMessage(activeRoom.id, aiReply).catch(() => {});
 await new Promise(r => setTimeout(r, 10000));
 // Check if any new real user message came in after userMsg
 const latestMsgs = allMessages[activeRoom.id] || [];
-const newRealMsg = latestMsgs.find(m => !m.isAI && m.user !== userId && m.id > userMsg.id);
+const newRealMsg = latestMsgs.find(m => !m.isAI && m.user !== userId && new Date(m.time) > new Date(userMsg.time));
 if (!newRealMsg) {
   setAiTyping(true);
   const aiReply = await getAIResponse(text, activeRoom.label, [...currentMsgs, userMsg]);
