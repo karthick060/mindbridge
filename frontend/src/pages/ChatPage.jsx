@@ -13,22 +13,11 @@ const CRISIS_HELPLINES = [
 
 // Seed messages shown only when a room has zero messages in the DB
 const SEED_MESSAGES = {
-  anxiety: [
-    { id:'s1', user:'CalmRiver_4821',  text:'Does anyone else feel overwhelmed by small everyday tasks sometimes?', time:new Date(Date.now()-120000).toISOString(), sentiment:'sad', risk_level:'low' },
-    { id:'s2', user:'GentleMoon_7392', text:'Yes, absolutely. Box breathing genuinely helps me 💙', time:new Date(Date.now()-75000).toISOString(), sentiment:'neutral', risk_level:'low' },
-    { id:'s3', user:'QuietStar_2048',  text:"I've been having panic attacks before work every single morning this week", time:new Date(Date.now()-30000).toISOString(), sentiment:'sad', risk_level:'medium' },
-  ],
-  depression: [
-    { id:'s4', user:'SoftLeaf_9312',  text:'Some days getting out of bed feels physically impossible. Does it ever get easier?', time:new Date(Date.now()-300000).toISOString(), sentiment:'depressed', risk_level:'medium' },
-    { id:'s5', user:'BraveDawn_4401', text:'I hear you. One tiny step at a time. It genuinely does get better 🌱', time:new Date(Date.now()-180000).toISOString(), sentiment:'neutral', risk_level:'low' },
-  ],
-  stress: [
-    { id:'s6', user:'WarmBrook_5543', text:'Work deadlines are crushing me this week. Anyone else?', time:new Date(Date.now()-240000).toISOString(), sentiment:'sad', risk_level:'medium' },
-  ],
+  anxiety: [],
+  depression: [],
+  stress: [],
   loneliness: [],
-  general: [
-    { id:'s7', user:'ClearWave_3310', text:'Just wanted to say this space matters. Thank you all for being here.', time:new Date(Date.now()-600000).toISOString(), sentiment:'happy', risk_level:'low' },
-  ],
+  general: [],
 };
 
 const isCrisisMessage = (text) => {
