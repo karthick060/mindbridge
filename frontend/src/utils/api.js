@@ -27,6 +27,6 @@ export const api = {
     fetch(`${BASE}/api/chat/rooms/${roomSlug}/messages/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content: text, is_ai: true, sender_anon_id: 'MindBridge AI' }),
+      body: JSON.stringify({ content: text, is_ai: true, sender_anon_id: 'AI_BOT' }),
     }).then(r => r.json()),
 };

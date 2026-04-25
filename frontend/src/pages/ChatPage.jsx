@@ -33,7 +33,7 @@ const SEED_MESSAGES = {
 
 const isCrisisMessage = (text) => {
   const lower = text.toLowerCase();
-  return ['kill myself','want to die','end my life','suicide','hurt myself','self harm','harm myself','no reason to live','end it all','want to harm','harm myself','cut myself','not want to live','dont want to live'].some(p => lower.includes(p));
+  return ['kill myself','want to die','end my life','suicide','hurt myself','self harm','harm myself','no reason to live','end it all','want to harm','cut myself','dont want to live','not want to live','end it','hurt myself'].some(p => lower.includes(p));
 };
 
 const getAIResponse = async (userMessage, roomLabel, conversationHistory) => {
