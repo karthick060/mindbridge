@@ -33,7 +33,39 @@ const SEED_MESSAGES = {
 
 const isCrisisMessage = (text) => {
   const lower = text.toLowerCase();
-  return ['kill myself','want to die','end my life','suicide','hurt myself','self harm','harm myself','no reason to live','end it all','want to harm','cut myself','dont want to live','not want to live','end it','hurt myself'].some(p => lower.includes(p));
+  return [
+    'kill myself','want to die','end my life','suicide','hurt myself',
+    'self harm','harm myself','no reason to live','end it all',
+    'want to harm','cut myself','dont want to live','i will kill',
+    'i want to kill','going to kill','want to kill','kill you',
+    'i will hurt','going to hurt'
+  ].some(p => lower.includes(p));
+};
+
+const isHarmfulContent = async (text) => {
+  try {
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.REACT_APP_GROQ_API_KEY}` },
+      body: JSON.stringify({
+        model: 'llama-3.3-70b-versatile',
+        max_tokens: 10,
+        temperature: 0,
+        messages: [{
+          role: 'system',
+          content: 'You are a content moderator. Reply only "YES" if the message contains harmful, violent, abusive, threatening, or self-harm content in ANY language. Reply only "NO" if it is safe.'
+        }, {
+          role: 'user',
+          content: text
+        }]
+      }),
+    });
+    const data = await response.json();
+    const result = data.choices?.[0]?.message?.content?.trim().toUpperCase();
+    return result === 'YES';
+  } catch {
+    return false;
+  }
 };
 
 const getAIResponse = async (userMessage, roomLabel, conversationHistory) => {
@@ -282,7 +314,8 @@ const ws = new WebSocket(`${WS_BASE}/ws/chat/${activeRoom.id}/`);
     const analysis = simulateAnalysis(text);
     setAnalyzing(false);
 
-    if (isCrisisMessage(text)) {
+    const harmful = await isHarmfulContent(text);
+if (isCrisisMessage(text) || harmful) {
       setShowCrisis(true);
       const userMsg = { id: Date.now(), user: userId, text, isOwn: true, time: new Date().toISOString(), sentiment: 'depressed', risk_level: 'critical' };
       addMessage(userMsg);
