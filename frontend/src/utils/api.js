@@ -22,4 +22,11 @@ export const api = {
   // ── Chat ─────────────────────────────────────────────────────────────────
   getRoomMessages: (roomSlug) =>
     fetch(`${BASE}/api/chat/rooms/${roomSlug}/messages/`).then(r => r.json()),
+
+  saveAIMessage: (roomSlug, text) =>
+    fetch(`${BASE}/api/chat/rooms/${roomSlug}/messages/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: text, is_ai: true, sender_anon_id: 'MindBridge AI' }),
+    }).then(r => r.json()),
 };

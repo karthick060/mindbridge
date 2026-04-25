@@ -290,6 +290,7 @@ const ws = new WebSocket(`${WS_BASE}/ws/chat/${activeRoom.id}/`);
       const aiReply = await getAIResponse(text, activeRoom.label, [...currentMsgs, userMsg]);
       setAiTyping(false);
       addMessage({ id: Date.now() + 1, isAI: true, text: aiReply, time: new Date().toISOString() });
+api.saveAIMessage(activeRoom.id, aiReply).catch(() => {});
       return;
     }
 
