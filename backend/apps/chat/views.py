@@ -7,11 +7,27 @@ from .serializers import RoomSerializer, MessageSerializer
 def list_rooms(request):
     return Response(RoomSerializer(ChatRoom.objects.filter(is_active=True), many=True).data)
 
-@api_view(['GET'])
+@api_view(['GET', 'POST'])
 def room_messages(request, slug):
     try:
         room = ChatRoom.objects.get(slug=slug)
     except ChatRoom.DoesNotExist:
         return Response({'error': 'Room not found'}, status=404)
+
+    if request.method == 'POST':
+        content = request.data.get('content', '').strip()
+        is_ai = request.data.get('is_ai', False)
+        sender = request.data.get('sender_anon_id', 'MindBridge AI')
+        if not content:
+            return Response({'error': 'No content'}, status=400)
+        msg = Message.objects.create(
+            room=room,
+            sender_anon_id=sender,
+            content=content,
+            is_blocked=False,
+            is_ai=is_ai,
+        )
+        return Response(MessageSerializer(msg).data, status=201)
+
     msgs = list(reversed(Message.objects.filter(room=room, is_blocked=False).select_related('analysis').order_by('-created_at')[:60]))
     return Response(MessageSerializer(msgs, many=True).data)
