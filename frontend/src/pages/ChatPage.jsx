@@ -329,12 +329,18 @@ api.saveAIMessage(activeRoom.id, aiReply).catch(() => {});
       wsRef.current.send(JSON.stringify({ message: text, anon_id: userId }));
     }
 
-    setAiTyping(true);
-    await new Promise(r => setTimeout(r, 800 + Math.random() * 600));
-    const aiReply = await getAIResponse(text, activeRoom.label, [...currentMsgs, userMsg]);
-    setAiTyping(false);
-    addMessage({ id: Date.now() + 1, isAI: true, text: aiReply, time: new Date().toISOString() });
-    api.saveAIMessage(activeRoom.id, aiReply).catch(() => {});
+    // Wait 10 seconds to see if a real user replies
+await new Promise(r => setTimeout(r, 10000));
+// Check if any new real user message came in after userMsg
+const latestMsgs = allMessages[activeRoom.id] || [];
+const newRealMsg = latestMsgs.find(m => !m.isAI && m.user !== userId && m.id > userMsg.id);
+if (!newRealMsg) {
+  setAiTyping(true);
+  const aiReply = await getAIResponse(text, activeRoom.label, [...currentMsgs, userMsg]);
+  setAiTyping(false);
+  addMessage({ id: Date.now() + 1, isAI: true, text: aiReply, time: new Date().toISOString() });
+  api.saveAIMessage(activeRoom.id, aiReply).catch(() => {});
+}
 
   }, [input, analyzing, userId, activeRoom.id, activeRoom.label, addMessage, currentMsgs]);
 
