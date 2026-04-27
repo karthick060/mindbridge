@@ -20,14 +20,25 @@ def room_messages(request, slug):
         sender = request.data.get('sender_anon_id', 'MindBridge AI')
         if not content:
             return Response({'error': 'No content'}, status=400)
-        msg = Message.objects.create(
-            room=room,
-            sender_anon_id=sender,
-            content=content,
-            is_blocked=False,
-            is_ai=is_ai,
-        )
-        return Response(MessageSerializer(msg).data, status=201)
+        from django.utils import timezone
+from datetime import timedelta
+if is_ai:
+    recent = Message.objects.filter(
+        room=room,
+        is_ai=True,
+        content=content,
+        created_at__gte=timezone.now() - timedelta(seconds=30)
+    ).exists()
+    if recent:
+        return Response({'detail': 'duplicate'}, status=200)
+msg = Message.objects.create(
+    room=room,
+    sender_anon_id=sender,
+    content=content,
+    is_blocked=False,
+    is_ai=is_ai,
+)
+return Response(MessageSerializer(msg).data, status=201)
 
     msgs = list(reversed(Message.objects.filter(room=room, is_blocked=False).select_related('analysis').order_by('-created_at')[:60]))
     return Response(MessageSerializer(msgs, many=True).data)
