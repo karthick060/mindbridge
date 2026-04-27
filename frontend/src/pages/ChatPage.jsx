@@ -266,10 +266,8 @@ useEffect(() => {
         : (data.results || []).map(normalizeBackendMessage);
       setAllMessages(prev => {
         const current = prev[activeRoom.id] || [];
-        const currentIds = new Set(current.map(m => String(m.id)));
-        const newMsgs = msgs.filter(m => !currentIds.has(String(m.id)));
-        if (newMsgs.length === 0) return prev;
-        return { ...prev, [activeRoom.id]: [...current, ...newMsgs] };
+        if (msgs.length === current.length) return prev;
+        return { ...prev, [activeRoom.id]: msgs };
       });
     } catch {}
   }, 3000);
@@ -307,7 +305,7 @@ if (isCrisisMessage(text) || harmful) {
       setAiTyping(true);
       const aiReply = await getAIResponse(text, activeRoom.label, [...currentMsgs, userMsg]);
       setAiTyping(false);
-      addMessage({ id: Date.now() + 1, isAI: true, text: aiReply, time: new Date().toISOString() });
+      addMessage({ id: `ai-${Date.now()}`, isAI: true, text: aiReply, time: new Date().toISOString() });
 api.saveAIMessage(activeRoom.id, aiReply).catch(() => {});
       return;
     }
@@ -325,21 +323,23 @@ api.saveAIMessage(activeRoom.id, aiReply).catch(() => {});
       wsRef.current.send(JSON.stringify({ message: text, anon_id: userId }));
     }
 
-    // Wait 10 seconds to see if a real user replies
-await new Promise(r => setTimeout(r, 5000));
-const latestMsgs = allMessages[activeRoom.id] || [];
-const newRealMsg = latestMsgs.find(m => !m.isAI && m.user !== userId && new Date(m.time) > new Date(userMsg.time));
-if (!newRealMsg) {
-  // Check if AI already replied to this message
-  const aiAlreadyReplied = latestMsgs.find(m => m.isAI && new Date(m.time) > new Date(userMsg.time));
-  if (!aiAlreadyReplied) {
-    setAiTyping(true);
-    const aiReply = await getAIResponse(text, activeRoom.label, [...currentMsgs, userMsg]);
-    setAiTyping(false);
-    addMessage({ id: Date.now() + 1, isAI: true, text: aiReply, time: new Date().toISOString() });
-    api.saveAIMessage(activeRoom.id, aiReply).catch(() => {});
+    setTimeout(async () => {
+  const latestMsgs = allMessages[activeRoom.id] || [];
+  const newRealMsg = latestMsgs.find(m =>
+    !m.isAI && m.user !== userId &&
+    new Date(m.time) > new Date(userMsg.time)
+  );
+  if (!newRealMsg) {
+    const aiAlreadyReplied = latestMsgs.find(m => m.isAI && new Date(m.time) > new Date(userMsg.time));
+    if (!aiAlreadyReplied) {
+      setAiTyping(true);
+      const aiReply = await getAIResponse(text, activeRoom.label, [...currentMsgs, userMsg]);
+      setAiTyping(false);
+      addMessage({ id: `ai-${Date.now()}`, isAI: true, text: aiReply, time: new Date().toISOString() });
+      api.saveAIMessage(activeRoom.id, aiReply).catch(() => {});
+    }
   }
-}
+}, 5000);
 
   }, [input, analyzing, userId, activeRoom.id, activeRoom.label, addMessage, currentMsgs]);
 
