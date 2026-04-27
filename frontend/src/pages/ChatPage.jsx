@@ -114,7 +114,7 @@ STRICT RULES:
 // Normalize messages coming from the backend into the same shape we use locally
 const normalizeBackendMessage = (m) => ({
   id:         m.id,
-  user:       m.sender_anon_id || m.user || 'Anonymous',
+  user: m.sender_anon_id === 'AI_BOT' ? 'MindBridge AI' : (m.sender_anon_id || m.user || 'Anonymous'),
   text:       m.content || m.text || '',
   time:       m.created_at || m.time || new Date().toISOString(),
   sentiment:  m.analysis?.sentiment  || m.sentiment  || 'neutral',
@@ -264,7 +264,13 @@ useEffect(() => {
       const msgs = Array.isArray(data)
         ? data.map(normalizeBackendMessage)
         : (data.results || []).map(normalizeBackendMessage);
-      setAllMessages(prev => ({ ...prev, [activeRoom.id]: msgs }));
+      setAllMessages(prev => {
+        const current = prev[activeRoom.id] || [];
+        const currentIds = new Set(current.map(m => String(m.id)));
+        const newMsgs = msgs.filter(m => !currentIds.has(String(m.id)));
+        if (newMsgs.length === 0) return prev;
+        return { ...prev, [activeRoom.id]: [...current, ...newMsgs] };
+      });
     } catch {}
   }, 3000);
   return () => clearInterval(interval);
