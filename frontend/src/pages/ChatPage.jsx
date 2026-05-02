@@ -36,65 +36,81 @@ const isCrisisMessage = (text) => {
 };
 
 const getAIResponse = async (userMessage, roomLabel, conversationHistory) => {
-  // Build conversation summary to avoid repetition
   const previousAIReplies = conversationHistory
     .filter(m => m.isAI)
-    .slice(-3)
-    .map(m => m.text)
-    .join(' | ');
+    .slice(-6)
+    .map((m, i) => `Reply ${i + 1}: "${m.text}"`)
+    .join('\n');
 
-  const systemPrompt = `You are MindBridge AI — a deeply empathetic, human-like mental health support companion in the "${roomLabel}" support room.
+  const systemPrompt = `You are a real person in the "${roomLabel}" support room. You've been through tough times yourself and you genuinely care.
 
-STRICT RULES TO AVOID REPETITION:
-- NEVER start your response the same way twice in a conversation
-- NEVER use phrases like "I'm here with you" or "Can you tell me more" if you have already used them
-- Your last few responses were: "${previousAIReplies}" — DO NOT repeat these patterns
-- Every response MUST feel completely fresh and different from previous ones
+${previousAIReplies ? `WHAT YOU ALREADY SAID — DO NOT REPEAT:\n${previousAIReplies}\n` : ''}
 
-YOUR PERSONALITY:
-- You are warm, caring, and genuinely interested in the person
-- You speak like a trusted friend who happens to understand mental health deeply
-- You use simple everyday language — never clinical or robotic
-- You validate feelings before offering anything else
-- You are curious about the person's specific situation
+YOUR TEXTING STYLE:
+- Text like a caring friend, not a therapist or bot
+- Lowercase is fine. Short messages. Real human reactions first.
+- Say things like "oh wow", "aw", "hey", "honestly", "that's a lot", "omg that's rough"
+- NEVER use: "valid", "that must be hard", "I understand", "I hear you", "journey", "navigate", "It sounds like", "It seems like", "It makes complete sense"
+- NEVER start your reply with the word "That"
+- React like a human first, then ask one small curious question
 
-RESPONSE STRUCTURE (rotate between these approaches):
-1. Validate + reflect back what they said + ask about a specific detail
-2. Share that their feeling makes complete sense + explore what triggered it
-3. Acknowledge how hard that must be + ask what has helped them before
-4. Express genuine care + focus on one specific word they used + dig deeper
-5. Normalize their experience + ask what they need most right now
+EXAMPLE RESPONSE STYLES (feel the vibe, never copy exactly):
+- "aw hey... sadness hits so different when you can't even explain why. is it more like numbness or more like everything at once?"
+- "panic attacks every morning before work — that's genuinely exhausting. what's the first thought that usually hits you when you wake up?"
+- "honestly just saying this out loud is something. how long have you been feeling this way?"
+- "oh no that's a lot to carry. do you have anyone around you right now or are you going through this alone?"
+- "ugh I'm sorry. when did it start getting this heavy?"
+- "hey, glad you're here. how are you doing today — like really?"
 
-RULES:
-- Keep responses to 2-4 sentences ONLY
-- End with ONE specific, thoughtful question (not generic)
-- Never diagnose, prescribe, or give medical advice
+STRICT RULES:
+- MAX 2 short sentences — like a real text message, never a paragraph
+- End with ONE simple question tied directly to what they said
+- Never diagnose or give medical advice
 - Never say you are an AI unless directly asked
-- Focus on THIS specific message, not generic mental health advice`;
+- If they say "hlo", "hi", "hey", "hello", "hii" — warmly greet them and gently ask how they are doing today
+- React to THEIR exact words, not generic emotions`;
+
+  const messages = conversationHistory
+    .filter(m => m.text && m.text.trim())
+    .slice(-12)
+    .map(m => ({ role: m.isAI ? 'assistant' : 'user', content: m.text.trim() }));
+
+  const cleanedMessages = messages.reduce((acc, msg) => {
+    if (acc.length > 0 && acc[acc.length - 1].role === msg.role) return acc;
+    return [...acc, msg];
+  }, []);
 
   try {
     const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
-      headers: { 'Content-Type':'application/json', 'Authorization':`Bearer ${process.env.REACT_APP_GROQ_API_KEY || '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'}` },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.REACT_APP_GROQ_API_KEY}`
+      },
       body: JSON.stringify({
         model: 'llama-3.3-70b-versatile',
-        max_tokens: 300,
-        temperature: 0.9,
+        max_tokens: 180,
+        temperature: 0.95,
         messages: [
-          { role:'system', content:systemPrompt },
-          ...conversationHistory.slice(-8).map(m => ({ role:m.isAI?'assistant':'user', content:m.text })),
-          { role:'user', content:userMessage }
+          { role: 'system', content: systemPrompt },
+          ...cleanedMessages,
+          { role: 'user', content: userMessage }
         ],
       }),
     });
     const data = await response.json();
     if (data.error) {
       console.error('Groq error:', data.error);
-      return "That sounds really difficult. What's been the hardest part of all this for you?";
+      const fallbacks = [
+        "ugh, something went wrong on my end — can you say that again?",
+        "sorry, lost that for a sec. what were you saying?",
+      ];
+      return fallbacks[Math.floor(Math.random() * fallbacks.length)];
     }
-    return data.choices?.[0]?.message?.content || "That takes courage to share. What's been weighing on you the most today?";
-  } catch {
-    return "I'm here and I hear you. Would you like to share more?";
+    return data.choices?.[0]?.message?.content?.trim() || "tell me more about that?";
+  } catch (err) {
+    console.error('AI fetch error:', err);
+    return "something cut out on my end — want to try again?";
   }
 };
 
@@ -169,8 +185,9 @@ export default function ChatPage({ userId }) {
   const [showCrisis,  setShowCrisis]  = useState(false);
   const [showSidebar, setShowSidebar] = useState(false);
   const [isMobile,    setIsMobile]    = useState(window.innerWidth < 768);
-  const wsRef  = useRef(null);
-  const endRef = useRef(null);
+  const wsRef        = useRef(null);
+  const endRef       = useRef(null);
+  const aiTimerRef   = useRef(null);
 
   useEffect(() => {
     const onResize = () => setIsMobile(window.innerWidth < 768);
@@ -183,29 +200,86 @@ export default function ChatPage({ userId }) {
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior:'smooth' }); }, [currentMsgs.length, activeRoom.id, aiTyping]);
 
+  // ── WebSocket — restored to original working version ────────────────────
   useEffect(() => {
-    const ws = new WebSocket(`wss://web-production-14b98.up.railway.app/ws/chat/${activeRoom.id}/`);
-    wsRef.current = ws;
-    ws.onmessage = (e) => {
-      const data = JSON.parse(e.data);
-      if (data.type === 'message' && data.anon_id !== userId) {
-        setAllMessages(prev => ({ ...prev, [activeRoom.id]: [...(prev[activeRoom.id]||[]), { id:Date.now(), user:data.anon_id, text:data.message, time:new Date().toISOString(), sentiment:data.sentiment, risk_level:data.risk_level }] }));
-      }
+    let ws;
+    let reconnectTimer;
+    let isUnmounted = false;
+    const seenIds = new Set();
+
+    const connect = () => {
+      if (isUnmounted) return;
+      ws = new WebSocket(`wss://mindbridge-897w.onrender.com/ws/chat/${activeRoom.id}/`);
+      wsRef.current = ws;
+
+      ws.onopen = () => console.log('WebSocket connected ✅');
+
+      ws.onmessage = (e) => {
+        try {
+          const data = JSON.parse(e.data);
+
+          if (data.type === 'message' && data.anon_id !== userId) {
+            // FIX: content-based key so reconnects don't show duplicate messages
+            const msgKey = `${data.anon_id}::${data.message}`;
+            if (seenIds.has(msgKey)) return;
+            seenIds.add(msgKey);
+            setTimeout(() => seenIds.delete(msgKey), 8000);
+
+            const newMsg = {
+              id: Date.now() + Math.random(),
+              user: data.anon_id,
+              text: data.message,
+              time: new Date().toISOString(),
+              sentiment: data.sentiment,
+              risk_level: data.risk_level,
+            };
+
+            setAllMessages(prev => ({
+              ...prev,
+              [activeRoom.id]: [...(prev[activeRoom.id] || []), newMsg]
+            }));
+
+            if (!window.MindBridgeStats) {
+              window.MindBridgeStats = { messages:[], blockedCount:0, activeUsers:new Set(), sessionStart:Date.now() };
+            }
+            window.MindBridgeStats.messages.push({ ...newMsg, room: activeRoom.id });
+            window.MindBridgeStats.activeUsers.add(data.anon_id);
+
+            // Cancel AI timer — a real user just replied
+            if (aiTimerRef.current) {
+              clearTimeout(aiTimerRef.current);
+              aiTimerRef.current = null;
+            }
+          }
+        } catch (err) { console.error('WS parse error:', err); }
+      };
+
+      ws.onclose = () => {
+        if (!isUnmounted) {
+          console.log('WebSocket closed — reconnecting in 3s...');
+          reconnectTimer = setTimeout(connect, 3000);
+        }
+      };
+
+      ws.onerror = () => ws.close();
     };
-    return () => ws.close();
+
+    connect();
+    return () => {
+      isUnmounted = true;
+      clearTimeout(reconnectTimer);
+      if (ws) ws.close();
+    };
   }, [activeRoom.id, userId]);
 
   const addMessage = useCallback((msg) => {
     setAllMessages(prev => ({ ...prev, [activeRoom.id]: [...(prev[activeRoom.id]||[]), msg] }));
-    // Track real stats for dashboard
     if (!window.MindBridgeStats) {
       window.MindBridgeStats = { messages:[], blockedCount:0, activeUsers:new Set(), sessionStart:Date.now() };
     }
+    window.MindBridgeStats.messages.push({ ...msg, room: activeRoom.id });
     if (!msg.isAI) {
-      window.MindBridgeStats.messages.push({ ...msg, room: activeRoom.id });
       window.MindBridgeStats.activeUsers.add(msg.user || userId);
-    } else {
-      window.MindBridgeStats.messages.push({ ...msg, room: activeRoom.id });
     }
   }, [activeRoom.id, userId]);
 
@@ -219,36 +293,81 @@ export default function ChatPage({ userId }) {
     const analysis = simulateAnalysis(text);
     setAnalyzing(false);
 
+    // ── CRISIS PATH ──────────────────────────────────────────────────────
     if (isCrisisMessage(text)) {
       setShowCrisis(true);
       const userMsg = { id:Date.now(), user:userId, text, isOwn:true, time:new Date().toISOString(), sentiment:'depressed', risk_level:'critical' };
       addMessage(userMsg);
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ message: text, anon_id: userId }));
+      }
       setAiTyping(true);
-      const aiReply = await getAIResponse(text, activeRoom.label, currentMsgs);
+      const aiReply = await getAIResponse(text, activeRoom.label, [...currentMsgs, userMsg]);
       setAiTyping(false);
       addMessage({ id:Date.now()+1, isAI:true, text:aiReply, time:new Date().toISOString() });
       return;
     }
 
+    // ── BLOCKED ──────────────────────────────────────────────────────────
     if (analysis.blocked) {
       if (window.MindBridgeStats) window.MindBridgeStats.blockedCount++;
       addMessage({ id:Date.now(), isAI:true, time:new Date().toISOString(), text:"This message was flagged. Please keep this space kind and supportive 💙" });
       return;
     }
 
-    const userMsg = { id:Date.now(), user:userId, text, isOwn:true, time:new Date().toISOString(), sentiment:analysis.sentiment, risk_level:analysis.risk_level };
+    // ── NORMAL MESSAGE ───────────────────────────────────────────────────
+    const userMsg = {
+      id: Date.now(),
+      user: userId,
+      text,
+      isOwn: true,
+      time: new Date().toISOString(),
+      sentiment: analysis.sentiment,
+      risk_level: analysis.risk_level,
+    };
     addMessage(userMsg);
-    if (wsRef.current?.readyState === WebSocket.OPEN) wsRef.current.send(JSON.stringify({ message:text, anon_id:userId }));
 
-    const othersInRoom = currentMsgs.some(m => !m.isOwn && !m.isAI);
-    if (othersInRoom) return;
-    setAiTyping(true);
-    await new Promise(r => setTimeout(r, 800 + Math.random()*600));
-    const aiReply = await getAIResponse(text, activeRoom.label, [...currentMsgs, userMsg]);
-    setAiTyping(false);
-    addMessage({ id:Date.now()+1, isAI:true, text:aiReply, time:new Date().toISOString() });
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ message: text, anon_id: userId }));
+    }
+
+    const SEED_USERS = ['CalmRiver_4821','GentleMoon_7392','QuietStar_2048',
+      'SoftLeaf_9312','BraveDawn_4401','WarmBrook_5543','ClearWave_3310'];
+
+    const twoMinsAgo = Date.now() - 120000;
+    const realUsersActiveRecently = currentMsgs.some(
+      m => !m.isOwn && !m.isAI && m.user !== userId &&
+      !SEED_USERS.includes(m.user) &&
+      new Date(m.time).getTime() > twoMinsAgo
+    );
+
+    if (realUsersActiveRecently) {
+      if (aiTimerRef.current) clearTimeout(aiTimerRef.current);
+      aiTimerRef.current = setTimeout(async () => {
+        const msgsNow = allMessages[activeRoom.id] || [];
+        const recentRealReply = msgsNow.some(
+          m => !m.isOwn && !m.isAI && !SEED_USERS.includes(m.user) &&
+          new Date(m.time) > new Date(userMsg.time)
+        );
+        if (recentRealReply) return;
+        setAiTyping(true);
+        const fullHistory = [...currentMsgs, userMsg];
+        const aiReply = await getAIResponse(text, activeRoom.label, fullHistory);
+        setAiTyping(false);
+        addMessage({ id:Date.now()+1, isAI:true, text:aiReply, time:new Date().toISOString() });
+        aiTimerRef.current = null;
+      }, 120000);
+    } else {
+      setAiTyping(true);
+      await new Promise(r => setTimeout(r, 800 + Math.random() * 600));
+      const fullHistory = [...currentMsgs, userMsg];
+      const aiReply = await getAIResponse(text, activeRoom.label, fullHistory);
+      setAiTyping(false);
+      addMessage({ id:Date.now()+1, isAI:true, text:aiReply, time:new Date().toISOString() });
+    }
+
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [input, analyzing, userId, activeRoom.id, activeRoom.label, addMessage]);
+  }, [input, analyzing, userId, activeRoom.id, activeRoom.label, addMessage, currentMsgs, allMessages]);
 
   const SidebarContent = () => (
     <div style={{ display:'flex', flexDirection:'column', height:'100%' }}>
@@ -296,7 +415,6 @@ export default function ChatPage({ userId }) {
       `}</style>
 
       <div style={{ flex:1, display:'flex', overflow:'hidden' }}>
-        {/* Mobile sidebar overlay */}
         {isMobile && showSidebar && (
           <div style={{ position:'fixed', inset:0, zIndex:150, display:'flex' }} onClick={() => setShowSidebar(false)}>
             <div style={{ width:'80%', maxWidth:300, background:'#080812', borderRight:'1px solid rgba(255,255,255,0.08)', height:'100%', animation:'slideIn 0.25s ease', paddingTop:66 }} onClick={e => e.stopPropagation()}>
@@ -306,16 +424,13 @@ export default function ChatPage({ userId }) {
           </div>
         )}
 
-        {/* Desktop sidebar */}
         {!isMobile && (
           <aside style={{ width:260, borderRight:'1px solid rgba(255,255,255,0.06)', flexShrink:0 }}>
             <SidebarContent />
           </aside>
         )}
 
-        {/* Main chat */}
         <div style={{ flex:1, display:'flex', flexDirection:'column', minWidth:0 }}>
-          {/* Header */}
           <div style={{ padding:isMobile?'12px 16px':'14px 24px', borderBottom:'1px solid rgba(255,255,255,0.06)', display:'flex', alignItems:'center', gap:12, background:'rgba(255,255,255,0.008)', flexShrink:0 }}>
             {isMobile && (
               <button onClick={() => setShowSidebar(true)} style={{ background:'rgba(255,255,255,0.06)', border:'1px solid rgba(255,255,255,0.1)', borderRadius:8, padding:'6px 10px', color:'#fff', cursor:'pointer', fontSize:16, flexShrink:0 }}>☰</button>
@@ -328,7 +443,6 @@ export default function ChatPage({ userId }) {
             <div style={{ background:'rgba(129,140,248,0.09)', border:'1px solid rgba(129,140,248,0.22)', borderRadius:8, padding:'5px 10px', fontSize:11, color:'#818CF8', flexShrink:0 }}>🤖 AI Active</div>
           </div>
 
-          {/* Messages */}
           <div style={{ flex:1, overflow:'auto', padding:isMobile?'14px 12px':'22px 24px', display:'flex', flexDirection:'column', gap:14 }}>
             {currentMsgs.length === 0 && (
               <div style={{ textAlign:'center', marginTop:60, color:'rgba(255,255,255,0.28)' }}>
@@ -349,7 +463,6 @@ export default function ChatPage({ userId }) {
             <div ref={endRef} />
           </div>
 
-          {/* Input */}
           <div style={{ padding:isMobile?'10px 12px':'14px 24px', borderTop:'1px solid rgba(255,255,255,0.06)', background:'rgba(255,255,255,0.008)', flexShrink:0 }}>
             <div style={{ display:'flex', gap:10, alignItems:'flex-end' }}>
               <textarea
