@@ -6,14 +6,13 @@ import {
 } from 'recharts';
 import { ROOMS, SENTIMENT_COLOR, RISK_COLOR } from '../utils/constants';
 
-// Initialize stats store — fills from real chat activity
+const BASE = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+const ADMIN_PASSWORD = process.env.REACT_APP_ADMIN_PASSWORD || 'admin123';
+
 if (!window.MindBridgeStats) {
   window.MindBridgeStats = {
-    messages: [],
-    blockedCount: 0,
-    activeUsers: new Set(),
-    presenceCounts: {},   // { room_slug: live_count } — updated by WebSocket presence events
-    sessionStart: Date.now(),
+    messages: [], blockedCount: 0, activeUsers: new Set(),
+    presenceCounts: {}, sessionStart: Date.now(),
   };
 }
 
@@ -21,6 +20,13 @@ const SEED_USERS = [
   'CalmRiver_4821','GentleMoon_7392','QuietStar_2048',
   'SoftLeaf_9312','BraveDawn_4401','WarmBrook_5543','ClearWave_3310'
 ];
+
+// ─── Support message templates by risk level ──────────────────────────────────
+const SUPPORT_TEMPLATES = {
+  critical: "🆘 Hi, we noticed you may be going through something very difficult right now. You're not alone — our support team has seen your message and we care about you. Please reach out to a crisis helpline: iCall: 9152987821 | Vandrevala Foundation: 1860-2662-345 (24/7). You matter. 💙",
+  high:     "💙 Hi, we noticed your message and want you to know that support is here for you. You don't have to go through this alone. If you'd like to talk to someone, iCall is available at 9152987821.",
+  medium:   "💙 Hi, we saw your message and just wanted to check in. We're here for you — feel free to share more whenever you're ready. You're in a safe space.",
+};
 
 const getStats = () => {
   const store = window.MindBridgeStats;
@@ -30,8 +36,7 @@ const getStats = () => {
   const roomCounts = ROOMS.map(r => ({
     name: r.label.split(' ')[0],
     messages: realMsgs.filter(m => m.room === r.id && !m.isAI).length,
-    color: r.color,
-    icon: r.icon,
+    color: r.color, icon: r.icon,
   }));
 
   const sentimentMap = { happy: 0, neutral: 0, sad: 0, depressed: 0, angry: 0 };
@@ -70,11 +75,10 @@ const getStats = () => {
       sentiment: m.sentiment,
       time: new Date(m.time).toLocaleTimeString(),
       room: ROOMS.find(r => r.id === m.room)?.label || 'General Support',
+      roomSlug: m.room || 'general',
       resolved: false,
     }));
 
-  // ── Active users: use live presence counts from WebSocket ──────────────
-  // Sum across all rooms, fall back to counting unique message senders
   const presenceCounts = store.presenceCounts || {};
   const presenceTotal = Object.values(presenceCounts).reduce((a, b) => a + b, 0);
   const fallbackUsers = new Set(realMsgs.filter(m => !m.isAI).map(m => m.user));
@@ -82,8 +86,7 @@ const getStats = () => {
 
   return {
     totalMessages:   realMsgs.filter(m => !m.isAI).length,
-    activeUsers,
-    blockedMessages: store.blockedCount || 0,
+    activeUsers, blockedMessages: store.blockedCount || 0,
     highRiskAlerts:  realMsgs.filter(m => ['high', 'critical'].includes(m.risk_level) && !m.isAI).length,
     aiResponses:     msgs.filter(m => m.isAI).length,
     crisisDetected:  realMsgs.filter(m => m.risk_level === 'critical').length,
@@ -104,11 +107,9 @@ const CustomTooltip = ({ active, payload, label }) => {
 
 function StatCard({ icon, label, value, color, sub, highlight }) {
   return (
-    <div
-      style={{ background: highlight ? `${color}0c` : 'rgba(255,255,255,0.025)', border: `1px solid ${highlight ? color + '30' : 'rgba(255,255,255,0.07)'}`, borderRadius: 20, padding: 28, transition: 'all 0.4s' }}
+    <div style={{ background: highlight ? `${color}0c` : 'rgba(255,255,255,0.025)', border: `1px solid ${highlight ? color + '30' : 'rgba(255,255,255,0.07)'}`, borderRadius: 20, padding: 28, transition: 'all 0.4s' }}
       onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-3px)'; }}
-      onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; }}
-    >
+      onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; }}>
       <div style={{ fontSize: 30, marginBottom: 14 }}>{icon}</div>
       <div style={{ fontSize: 38, fontWeight: 800, color, letterSpacing: '-1.5px', marginBottom: 4 }}>{value}</div>
       <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)', fontWeight: 500 }}>{label}</div>
@@ -128,48 +129,194 @@ function EmptyState() {
   );
 }
 
+// ─── Password Gate ─────────────────────────────────────────────────────────────
+function PasswordGate({ onSuccess }) {
+  const [input, setInput] = useState('');
+  const [error, setError] = useState(false);
+  const [shake, setShake] = useState(false);
+
+  const handleSubmit = () => {
+    if (input === ADMIN_PASSWORD) {
+      sessionStorage.setItem('mb_admin', '1');
+      onSuccess();
+    } else {
+      setError(true); setShake(true); setInput('');
+      setTimeout(() => setShake(false), 600);
+    }
+  };
+
+  return (
+    <div style={{ minHeight: '100vh', background: '#080812', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'DM Sans', sans-serif" }}>
+      <style>{`@keyframes shake { 0%,100%{transform:translateX(0)} 20%,60%{transform:translateX(-8px)} 40%,80%{transform:translateX(8px)} }`}</style>
+      <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 24, padding: '48px 40px', width: 360, textAlign: 'center', animation: shake ? 'shake 0.5s ease' : 'none' }}>
+        <div style={{ fontSize: 48, marginBottom: 20 }}>🔐</div>
+        <h2 style={{ color: '#fff', fontSize: 22, fontWeight: 700, marginBottom: 8 }}>Admin Access</h2>
+        <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: 13, marginBottom: 28 }}>Enter the admin password to continue</p>
+        <input type="password" value={input} onChange={e => { setInput(e.target.value); setError(false); }}
+          onKeyDown={e => e.key === 'Enter' && handleSubmit()} placeholder="Password" autoFocus
+          style={{ width: '100%', padding: '13px 16px', borderRadius: 12, fontSize: 15, background: 'rgba(255,255,255,0.06)', border: `1px solid ${error ? 'rgba(252,165,165,0.5)' : 'rgba(255,255,255,0.1)'}`, color: '#fff', outline: 'none', marginBottom: 12, boxSizing: 'border-box', fontFamily: "'DM Sans', sans-serif" }} />
+        {error && <p style={{ color: '#FCA5A5', fontSize: 13, marginBottom: 12 }}>❌ Incorrect password. Try again.</p>}
+        <button onClick={handleSubmit} style={{ width: '100%', padding: '13px', borderRadius: 12, fontSize: 15, fontWeight: 600, background: 'rgba(129,140,248,0.2)', border: '1px solid rgba(129,140,248,0.4)', color: '#818CF8', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", transition: 'all 0.2s' }}
+          onMouseEnter={e => e.currentTarget.style.background = 'rgba(129,140,248,0.35)'}
+          onMouseLeave={e => e.currentTarget.style.background = 'rgba(129,140,248,0.2)'}>
+          Enter Dashboard
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Resolve Popup ─────────────────────────────────────────────────────────────
+function ResolvePopup({ flag, onConfirm, onCancel }) {
+  const defaultMsg = SUPPORT_TEMPLATES[flag.risk] || SUPPORT_TEMPLATES.medium;
+  const [note, setNote]       = useState('');
+  const [message, setMessage] = useState(defaultMsg);
+  const [sending, setSending] = useState(false);
+  const [sent, setSent]       = useState(false);
+  const [error, setError]     = useState('');
+
+  const handleConfirm = async () => {
+    if (!note.trim()) { setError('Please write a note about what action you took.'); return; }
+    setSending(true);
+    setError('');
+    try {
+      // Send support message to the user's chat room via API
+      await fetch(`${BASE}/api/chat/rooms/${flag.roomSlug}/messages/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          content: message,
+          is_ai: true,
+          sender_anon_id: 'ADMIN_SUPPORT',
+          check_duplicate: false,
+        }),
+      });
+      setSent(true);
+      setTimeout(() => onConfirm({ note, message, resolvedAt: new Date().toLocaleString() }), 1000);
+    } catch (err) {
+      setError('Failed to send message. Please try again.');
+      setSending(false);
+    }
+  };
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, fontFamily: "'DM Sans', sans-serif", padding: 20 }}>
+      <div style={{ background: '#0f0f1e', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 24, padding: 36, width: '100%', maxWidth: 540, animation: 'fadeUp 0.3s ease both' }}>
+
+        {/* Header */}
+        <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', marginBottom: 24 }}>
+          <div style={{ width: 44, height: 44, borderRadius: 14, background: `${RISK_COLOR[flag.risk] || '#818CF8'}18`, border: `1px solid ${RISK_COLOR[flag.risk] || '#818CF8'}35`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>
+            🚨
+          </div>
+          <div>
+            <h3 style={{ color: '#fff', fontSize: 18, fontWeight: 700, marginBottom: 4 }}>Resolve Alert</h3>
+            <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: 13 }}>
+              User <strong style={{ color: 'rgba(255,255,255,0.6)' }}>{flag.user}</strong> in <strong style={{ color: 'rgba(255,255,255,0.6)' }}>{flag.room}</strong>
+            </p>
+          </div>
+        </div>
+
+        {/* Original message */}
+        <div style={{ background: `${RISK_COLOR[flag.risk] || '#818CF8'}0c`, border: `1px solid ${RISK_COLOR[flag.risk] || '#818CF8'}25`, borderRadius: 12, padding: '12px 16px', marginBottom: 22 }}>
+          <div style={{ fontSize: 11, color: RISK_COLOR[flag.risk] || '#818CF8', fontWeight: 600, marginBottom: 5, textTransform: 'uppercase', letterSpacing: '0.5px' }}>⚠ {flag.risk} risk message</div>
+          <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.7)', lineHeight: 1.6 }}>"{flag.msg}"</div>
+        </div>
+
+        {/* Step 1 — Admin note */}
+        <div style={{ marginBottom: 20 }}>
+          <label style={{ fontSize: 13, fontWeight: 600, color: 'rgba(255,255,255,0.6)', display: 'block', marginBottom: 8 }}>
+            📝 Step 1 — What action did you take?
+          </label>
+          <textarea
+            value={note}
+            onChange={e => { setNote(e.target.value); setError(''); }}
+            placeholder="e.g. Sent crisis helpline number, monitored user, contacted moderator..."
+            rows={3}
+            style={{ width: '100%', padding: '12px 14px', borderRadius: 12, fontSize: 14, background: 'rgba(255,255,255,0.05)', border: `1px solid ${error ? 'rgba(252,165,165,0.4)' : 'rgba(255,255,255,0.1)'}`, color: '#fff', outline: 'none', resize: 'vertical', boxSizing: 'border-box', fontFamily: "'DM Sans', sans-serif", lineHeight: 1.6 }}
+          />
+          {error && <p style={{ color: '#FCA5A5', fontSize: 12, marginTop: 6 }}>⚠ {error}</p>}
+        </div>
+
+        {/* Step 2 — Support message */}
+        <div style={{ marginBottom: 24 }}>
+          <label style={{ fontSize: 13, fontWeight: 600, color: 'rgba(255,255,255,0.6)', display: 'block', marginBottom: 8 }}>
+            💬 Step 2 — Support message to send to user <span style={{ color: 'rgba(255,255,255,0.3)', fontWeight: 400 }}>(editable)</span>
+          </label>
+          <textarea
+            value={message}
+            onChange={e => setMessage(e.target.value)}
+            rows={4}
+            style={{ width: '100%', padding: '12px 14px', borderRadius: 12, fontSize: 13, background: 'rgba(78,205,196,0.05)', border: '1px solid rgba(78,205,196,0.2)', color: 'rgba(255,255,255,0.75)', outline: 'none', resize: 'vertical', boxSizing: 'border-box', fontFamily: "'DM Sans', sans-serif", lineHeight: 1.7 }}
+          />
+          <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', marginTop: 6 }}>This will appear in the user's chat room as a support message.</p>
+        </div>
+
+        {/* Buttons */}
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button onClick={onCancel} disabled={sending}
+            style={{ flex: 1, padding: '12px', borderRadius: 12, fontSize: 14, fontWeight: 500, background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.4)', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}>
+            Cancel
+          </button>
+          <button onClick={handleConfirm} disabled={sending || sent}
+            style={{ flex: 2, padding: '12px', borderRadius: 12, fontSize: 14, fontWeight: 700, background: sent ? 'rgba(78,205,196,0.2)' : 'rgba(78,205,196,0.15)', border: `1px solid ${sent ? 'rgba(78,205,196,0.5)' : 'rgba(78,205,196,0.3)'}`, color: '#4ECDC4', cursor: sending ? 'wait' : 'pointer', fontFamily: "'DM Sans', sans-serif", transition: 'all 0.2s' }}>
+            {sent ? '✓ Resolved & Message Sent!' : sending ? 'Sending...' : '✅ Resolve & Send Message'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main Export ───────────────────────────────────────────────────────────────
 export default function DashboardPage() {
+  const [authed,    setAuthed]    = useState(sessionStorage.getItem('mb_admin') === '1');
   const [stats,     setStats]     = useState(getStats());
   const [activeTab, setActiveTab] = useState('overview');
   const [clock,     setClock]     = useState(new Date());
   const [flags,     setFlags]     = useState([]);
   const [newAlert,  setNewAlert]  = useState(false);
   const [prevCount, setPrevCount] = useState(0);
+  const [resolving, setResolving] = useState(null); // flag being resolved
 
-  // Refresh stats every 2 seconds for real-time feel
   useEffect(() => {
+    if (!authed) return;
     const t = setInterval(() => {
       const s = getStats();
       setStats(s);
       if (s.flagged.length > prevCount) {
-        setNewAlert(true);
-        setPrevCount(s.flagged.length);
+        setNewAlert(true); setPrevCount(s.flagged.length);
         setTimeout(() => setNewAlert(false), 3000);
       }
-      // Preserve resolved state
       setFlags(prev => {
-        const resolvedKeys = new Set(prev.filter(f => f.resolved).map(f => `${f.user}_${f.msg}`));
-        return s.flagged.map(f => ({ ...f, resolved: resolvedKeys.has(`${f.user}_${f.msg}`) }));
+        const resolvedMap = {};
+        prev.filter(f => f.resolved).forEach(f => { resolvedMap[`${f.user}_${f.msg}`] = f; });
+        return s.flagged.map(f => resolvedMap[`${f.user}_${f.msg}`] ? resolvedMap[`${f.user}_${f.msg}`] : f);
       });
     }, 2000);
     return () => clearInterval(t);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [prevCount]);
+  }, [prevCount, authed]);
 
   useEffect(() => {
-    const s = getStats();
-    setStats(s);
-    setFlags(s.flagged);
-  }, []);
+    if (!authed) return;
+    const s = getStats(); setStats(s); setFlags(s.flagged);
+  }, [authed]);
 
   useEffect(() => {
     const t = setInterval(() => setClock(new Date()), 1000);
     return () => clearInterval(t);
   }, []);
 
-  const resolveFlag = (id) => {
-    setFlags(prev => prev.map(f => f.id === id ? { ...f, resolved: true } : f));
+  const handleResolveConfirm = ({ note, message, resolvedAt }) => {
+    setFlags(prev => prev.map(f =>
+      f.id === resolving.id
+        ? { ...f, resolved: true, adminNote: note, supportMsg: message, resolvedAt }
+        : f
+    ));
+    setResolving(null);
   };
+
+  if (!authed) return <PasswordGate onSuccess={() => setAuthed(true)} />;
 
   const unresolved = flags.filter(f => !f.resolved);
   const isEmpty    = stats.totalMessages === 0;
@@ -179,8 +326,16 @@ export default function DashboardPage() {
       <style>{`
         @keyframes fadeUp { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
         @keyframes ping   { 0% { transform:scale(1); opacity:1; } 100% { transform:scale(2.2); opacity:0; } }
-        @keyframes spin   { to { transform:rotate(360deg); } }
       `}</style>
+
+      {/* Resolve Popup */}
+      {resolving && (
+        <ResolvePopup
+          flag={resolving}
+          onConfirm={handleResolveConfirm}
+          onCancel={() => setResolving(null)}
+        />
+      )}
 
       <div style={{ maxWidth: 1200, margin: '0 auto', padding: '40px 40px 100px' }}>
 
@@ -196,15 +351,21 @@ export default function DashboardPage() {
               <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.36)' }}>Live · {clock.toLocaleTimeString()} · Updates every 2s</span>
             </div>
           </div>
-          {unresolved.length > 0 && (
-            <div style={{ background: newAlert ? 'rgba(239,68,68,0.16)' : 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 13, padding: '13px 20px', display: 'flex', gap: 12, alignItems: 'center', cursor: 'pointer', transition: 'all 0.4s' }} onClick={() => setActiveTab('alerts')}>
-              <span style={{ fontSize: 22 }}>🚨</span>
-              <div>
-                <div style={{ fontSize: 14.5, fontWeight: 700, color: '#FCA5A5' }}>{unresolved.length} Unresolved Alert{unresolved.length !== 1 ? 's' : ''}</div>
-                <div style={{ fontSize: 12, color: 'rgba(252,165,165,0.55)' }}>Click to review</div>
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+            {unresolved.length > 0 && (
+              <div style={{ background: newAlert ? 'rgba(239,68,68,0.16)' : 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 13, padding: '13px 20px', display: 'flex', gap: 12, alignItems: 'center', cursor: 'pointer', transition: 'all 0.4s' }} onClick={() => setActiveTab('alerts')}>
+                <span style={{ fontSize: 22 }}>🚨</span>
+                <div>
+                  <div style={{ fontSize: 14.5, fontWeight: 700, color: '#FCA5A5' }}>{unresolved.length} Unresolved Alert{unresolved.length !== 1 ? 's' : ''}</div>
+                  <div style={{ fontSize: 12, color: 'rgba(252,165,165,0.55)' }}>Click to review</div>
+                </div>
               </div>
-            </div>
-          )}
+            )}
+            <button onClick={() => { sessionStorage.removeItem('mb_admin'); setAuthed(false); }}
+              style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 10, padding: '9px 16px', color: 'rgba(255,255,255,0.35)', cursor: 'pointer', fontSize: 13, fontFamily: "'DM Sans', sans-serif" }}>
+              🔒 Lock
+            </button>
+          </div>
         </div>
 
         {isEmpty ? <EmptyState /> : (
@@ -311,7 +472,6 @@ export default function DashboardPage() {
                     </LineChart>
                   </ResponsiveContainer>
                 </div>
-
                 <div style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 20, padding: 28 }}>
                   <h3 style={{ fontSize: 15.5, fontWeight: 700, marginBottom: 22, color: 'rgba(255,255,255,0.72)' }}>Room Breakdown</h3>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -347,9 +507,10 @@ export default function DashboardPage() {
                       {unresolved.length} unresolved · {flags.filter(f => f.resolved).length} resolved · New alerts arrive automatically
                     </p>
                     <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.22)', marginTop: 6 }}>
-                      ℹ️ Flagged when users send medium/high/critical risk messages. Click Resolve to mark as reviewed.
+                      ℹ️ Click <strong>Resolve</strong> to write an admin note and send a support message to the user.
                     </p>
                   </div>
+
                   {flags.length === 0 ? (
                     <div style={{ textAlign: 'center', padding: '60px 0', color: 'rgba(255,255,255,0.28)' }}>
                       <div style={{ fontSize: 48, marginBottom: 16 }}>✅</div>
@@ -359,28 +520,40 @@ export default function DashboardPage() {
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                       {flags.map(f => (
-                        <div key={f.id} style={{ background: f.resolved ? 'rgba(255,255,255,0.01)' : 'rgba(255,255,255,0.025)', border: `1px solid ${f.resolved ? 'rgba(255,255,255,0.05)' : (RISK_COLOR[f.risk] || '#818CF8') + '28'}`, borderRadius: 14, padding: '17px 22px', display: 'flex', gap: 16, alignItems: 'flex-start', opacity: f.resolved ? 0.4 : 1, transition: 'all 0.4s' }}>
-                          <div style={{ width: 38, height: 38, borderRadius: 12, flexShrink: 0, background: `${RISK_COLOR[f.risk] || '#818CF8'}14`, border: `1px solid ${RISK_COLOR[f.risk] || '#818CF8'}30`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: RISK_COLOR[f.risk] || '#818CF8', fontFamily: "'JetBrains Mono', monospace", fontWeight: 700 }}>
-                            {(f.user || '?').charAt(0).toUpperCase()}
-                          </div>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 7, flexWrap: 'wrap' }}>
-                              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: 'rgba(255,255,255,0.42)' }}>{f.user}</span>
-                              <span style={{ fontSize: 10.5, padding: '2px 8px', borderRadius: 100, background: `${RISK_COLOR[f.risk] || '#818CF8'}14`, color: RISK_COLOR[f.risk] || '#818CF8', border: `1px solid ${RISK_COLOR[f.risk] || '#818CF8'}30` }}>⚠ {f.risk}</span>
-                              {f.sentiment && <span style={{ fontSize: 10.5, padding: '2px 8px', borderRadius: 100, background: `${SENTIMENT_COLOR[f.sentiment] || '#818CF8'}14`, color: SENTIMENT_COLOR[f.sentiment] || '#818CF8', border: `1px solid ${SENTIMENT_COLOR[f.sentiment] || '#818CF8'}30` }}>{f.sentiment}</span>}
-                              <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.22)' }}>{f.room} · {f.time}</span>
+                        <div key={f.id} style={{ background: f.resolved ? 'rgba(255,255,255,0.01)' : 'rgba(255,255,255,0.025)', border: `1px solid ${f.resolved ? 'rgba(255,255,255,0.05)' : (RISK_COLOR[f.risk] || '#818CF8') + '28'}`, borderRadius: 14, padding: '17px 22px', opacity: f.resolved ? 0.5 : 1, transition: 'all 0.4s' }}>
+                          <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
+                            <div style={{ width: 38, height: 38, borderRadius: 12, flexShrink: 0, background: `${RISK_COLOR[f.risk] || '#818CF8'}14`, border: `1px solid ${RISK_COLOR[f.risk] || '#818CF8'}30`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: RISK_COLOR[f.risk] || '#818CF8', fontFamily: "'JetBrains Mono', monospace", fontWeight: 700 }}>
+                              {(f.user || '?').charAt(0).toUpperCase()}
                             </div>
-                            <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.75)', lineHeight: 1.6 }}>{f.msg}</div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 7, flexWrap: 'wrap' }}>
+                                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: 'rgba(255,255,255,0.42)' }}>{f.user}</span>
+                                <span style={{ fontSize: 10.5, padding: '2px 8px', borderRadius: 100, background: `${RISK_COLOR[f.risk] || '#818CF8'}14`, color: RISK_COLOR[f.risk] || '#818CF8', border: `1px solid ${RISK_COLOR[f.risk] || '#818CF8'}30` }}>⚠ {f.risk}</span>
+                                {f.sentiment && <span style={{ fontSize: 10.5, padding: '2px 8px', borderRadius: 100, background: `${SENTIMENT_COLOR[f.sentiment] || '#818CF8'}14`, color: SENTIMENT_COLOR[f.sentiment] || '#818CF8', border: `1px solid ${SENTIMENT_COLOR[f.sentiment] || '#818CF8'}30` }}>{f.sentiment}</span>}
+                                <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.22)' }}>{f.room} · {f.time}</span>
+                              </div>
+                              <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.75)', lineHeight: 1.6, marginBottom: f.resolved && f.adminNote ? 10 : 0 }}>{f.msg}</div>
+
+                              {/* Show admin note after resolved */}
+                              {f.resolved && f.adminNote && (
+                                <div style={{ marginTop: 10, background: 'rgba(78,205,196,0.06)', border: '1px solid rgba(78,205,196,0.15)', borderRadius: 10, padding: '10px 14px' }}>
+                                  <div style={{ fontSize: 11, color: '#4ECDC4', fontWeight: 600, marginBottom: 4 }}>📝 Admin Note · {f.resolvedAt}</div>
+                                  <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.55)' }}>{f.adminNote}</div>
+                                  <div style={{ fontSize: 11, color: 'rgba(78,205,196,0.6)', marginTop: 6 }}>💬 Support message sent to user's chat room</div>
+                                </div>
+                              )}
+                            </div>
+
+                            {!f.resolved
+                              ? <button onClick={() => setResolving(f)}
+                                  style={{ flexShrink: 0, background: 'rgba(78,205,196,0.1)', border: '1px solid rgba(78,205,196,0.3)', borderRadius: 9, padding: '9px 18px', color: '#4ECDC4', cursor: 'pointer', fontSize: 13, fontWeight: 600, fontFamily: "'DM Sans', sans-serif", transition: 'all 0.2s' }}
+                                  onMouseEnter={e => e.currentTarget.style.background = 'rgba(78,205,196,0.2)'}
+                                  onMouseLeave={e => e.currentTarget.style.background = 'rgba(78,205,196,0.1)'}>
+                                  Resolve
+                                </button>
+                              : <span style={{ fontSize: 12, color: '#4ECDC4', flexShrink: 0, marginTop: 8, fontWeight: 600 }}>✓ Resolved</span>
+                            }
                           </div>
-                          {!f.resolved
-                            ? <button onClick={() => resolveFlag(f.id)}
-                                style={{ flexShrink: 0, background: 'rgba(78,205,196,0.1)', border: '1px solid rgba(78,205,196,0.3)', borderRadius: 9, padding: '9px 18px', color: '#4ECDC4', cursor: 'pointer', fontSize: 13, fontWeight: 600, fontFamily: "'DM Sans', sans-serif", transition: 'all 0.2s' }}
-                                onMouseEnter={e => e.currentTarget.style.background = 'rgba(78,205,196,0.2)'}
-                                onMouseLeave={e => e.currentTarget.style.background = 'rgba(78,205,196,0.1)'}>
-                                Resolve
-                              </button>
-                            : <span style={{ fontSize: 12, color: '#4ECDC4', flexShrink: 0, marginTop: 8, fontWeight: 600 }}>✓ Resolved</span>
-                          }
                         </div>
                       ))}
                     </div>

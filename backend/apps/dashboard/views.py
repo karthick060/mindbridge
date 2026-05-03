@@ -1,5 +1,6 @@
 """Admin dashboard analytics API."""
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAdminUser  # 👈 added
 from rest_framework.response import Response
 from rest_framework import status
 from django.db.models import Count
@@ -12,6 +13,7 @@ def _since_24h():
 
 
 @api_view(['GET'])
+@permission_classes([IsAdminUser])  # 👈 add this to every view
 def dashboard_stats(request):
     from apps.chat.models import Message, MessageAnalysis
     from .models import CrisisAlert
@@ -26,6 +28,7 @@ def dashboard_stats(request):
 
 
 @api_view(['GET'])
+@permission_classes([IsAdminUser])  # 👈
 def flagged_messages(request):
     from .models import CrisisAlert
     flags = CrisisAlert.objects.filter(is_resolved=False).order_by('-created_at')[:20]
@@ -37,6 +40,7 @@ def flagged_messages(request):
 
 
 @api_view(['PATCH'])
+@permission_classes([IsAdminUser])  # 👈
 def resolve_alert(request, pk):
     from .models import CrisisAlert
     try:
@@ -50,6 +54,7 @@ def resolve_alert(request, pk):
 
 
 @api_view(['GET'])
+@permission_classes([IsAdminUser])  # 👈
 def room_activity(request):
     from apps.chat.models import Message
     data = Message.objects.filter(created_at__gte=_since_24h(), is_blocked=False).values('room__slug','room__name').annotate(count=Count('id'))

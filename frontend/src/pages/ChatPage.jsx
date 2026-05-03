@@ -179,6 +179,27 @@ export default function ChatPage({ userId }) {
   const initRoomId  = location.state?.room || 'anxiety';
   const [activeRoom,  setActiveRoom]  = useState(ROOMS.find(r => r.id === initRoomId) || ROOMS[0]);
   const [allMessages, setAllMessages] = useState(SEED_MESSAGES);
+  // Fetch real messages from DB when room changes
+useEffect(() => {
+  fetch(`http://localhost:8000/api/chat/rooms/${activeRoom.id}/messages/`)
+    .then(r => r.json())
+    .then(data => {
+      if (Array.isArray(data) && data.length > 0) {
+        const fetched = data.map(m => ({
+          id: m.id,
+          user: m.sender_anon_id,
+          text: m.content,
+          time: m.created_at,
+          isAI: m.is_ai || m.sender_anon_id === 'AI_BOT' || m.sender_anon_id === 'ADMIN_SUPPORT',
+          isOwn: m.sender_anon_id === userId,
+          sentiment: m.sentiment,
+          risk_level: m.risk_level,
+        }));
+        setAllMessages(prev => ({ ...prev, [activeRoom.id]: fetched }));
+      }
+    })
+    .catch(err => console.error('Failed to fetch messages:', err));
+}, [activeRoom.id, userId]);
   const [input,       setInput]       = useState('');
   const [analyzing,   setAnalyzing]   = useState(false);
   const [aiTyping,    setAiTyping]    = useState(false);
