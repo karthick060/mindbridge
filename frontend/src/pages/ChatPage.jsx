@@ -200,7 +200,7 @@ export default function ChatPage({ userId }) {
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior:'smooth' }); }, [currentMsgs.length, activeRoom.id, aiTyping]);
 
-  // ── WebSocket — restored to original working version ────────────────────
+  // ── WebSocket — includes anon_id in URL for presence tracking ───────────
   useEffect(() => {
     let ws;
     let reconnectTimer;
@@ -209,7 +209,8 @@ export default function ChatPage({ userId }) {
 
     const connect = () => {
       if (isUnmounted) return;
-      ws = new WebSocket(`wss://mindbridge-897w.onrender.com/ws/chat/${activeRoom.id}/`);
+      // Pass anon_id as query param so backend can track presence on connect/disconnect
+      ws = new WebSocket(`wss://mindbridge-897w.onrender.com/ws/chat/${activeRoom.id}/?anon_id=${userId}`);
       wsRef.current = ws;
 
       ws.onopen = () => console.log('WebSocket connected ✅');
@@ -218,8 +219,19 @@ export default function ChatPage({ userId }) {
         try {
           const data = JSON.parse(e.data);
 
+          // Handle presence updates — store in window for dashboard to read
+          if (data.type === 'presence') {
+            if (!window.MindBridgeStats) {
+              window.MindBridgeStats = { messages:[], blockedCount:0, activeUsers:new Set(), sessionStart:Date.now(), presenceCounts:{} };
+            }
+            if (!window.MindBridgeStats.presenceCounts) window.MindBridgeStats.presenceCounts = {};
+            window.MindBridgeStats.presenceCounts[data.room_slug] = data.active_users;
+            return;
+          }
+
+          // Handle incoming chat messages from other users
           if (data.type === 'message' && data.anon_id !== userId) {
-            // FIX: content-based key so reconnects don't show duplicate messages
+            // Content-based dedup key so reconnects don't duplicate
             const msgKey = `${data.anon_id}::${data.message}`;
             if (seenIds.has(msgKey)) return;
             seenIds.add(msgKey);
@@ -240,7 +252,7 @@ export default function ChatPage({ userId }) {
             }));
 
             if (!window.MindBridgeStats) {
-              window.MindBridgeStats = { messages:[], blockedCount:0, activeUsers:new Set(), sessionStart:Date.now() };
+              window.MindBridgeStats = { messages:[], blockedCount:0, activeUsers:new Set(), sessionStart:Date.now(), presenceCounts:{} };
             }
             window.MindBridgeStats.messages.push({ ...newMsg, room: activeRoom.id });
             window.MindBridgeStats.activeUsers.add(data.anon_id);
@@ -275,7 +287,7 @@ export default function ChatPage({ userId }) {
   const addMessage = useCallback((msg) => {
     setAllMessages(prev => ({ ...prev, [activeRoom.id]: [...(prev[activeRoom.id]||[]), msg] }));
     if (!window.MindBridgeStats) {
-      window.MindBridgeStats = { messages:[], blockedCount:0, activeUsers:new Set(), sessionStart:Date.now() };
+      window.MindBridgeStats = { messages:[], blockedCount:0, activeUsers:new Set(), sessionStart:Date.now(), presenceCounts:{} };
     }
     window.MindBridgeStats.messages.push({ ...msg, room: activeRoom.id });
     if (!msg.isAI) {

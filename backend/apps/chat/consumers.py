@@ -1,9 +1,12 @@
 """
-WebSocket consumer — handles real-time chat.
+WebSocket consumer — handles real-time chat + presence tracking.
 Every incoming message is:
   1. Run through the AI moderation engine
   2. Saved to the database
   3. Either blocked (sender notified) or broadcast to the room
+
+Presence: connected user counts are broadcast on connect/disconnect
+so every tab's dashboard shows the real live user count.
 """
 import json
 import logging
@@ -12,17 +15,45 @@ from channels.db import database_sync_to_async
 
 logger = logging.getLogger(__name__)
 
+# In-memory presence store: { room_slug: set of anon_ids }
+# Fine for a single-dyno free-tier deployment
+ROOM_PRESENCE = {}
+
 
 class ChatConsumer(AsyncWebsocketConsumer):
 
     async def connect(self):
         self.room_slug  = self.scope['url_route']['kwargs']['room_slug']
         self.room_group = f'chat_{self.room_slug}'
+        self.anon_id    = self.scope['query_string'].decode()
+        # Parse anon_id from query string: ws://...?anon_id=XYZ
+        qs = {}
+        for part in self.anon_id.split('&'):
+            if '=' in part:
+                k, v = part.split('=', 1)
+                qs[k] = v
+        self.anon_id = qs.get('anon_id', 'Anonymous')
+
         await self.channel_layer.group_add(self.room_group, self.channel_name)
         await self.accept()
 
+        # Track presence
+        if self.room_slug not in ROOM_PRESENCE:
+            ROOM_PRESENCE[self.room_slug] = set()
+        ROOM_PRESENCE[self.room_slug].add(self.anon_id)
+
+        # Broadcast updated user count to everyone in the room
+        await self._broadcast_presence()
+
     async def disconnect(self, code):
+        # Remove from presence
+        if self.room_slug in ROOM_PRESENCE:
+            ROOM_PRESENCE[self.room_slug].discard(self.anon_id)
+
         await self.channel_layer.group_discard(self.room_group, self.channel_name)
+
+        # Broadcast updated count
+        await self._broadcast_presence()
 
     async def receive(self, text_data):
         try:
@@ -35,11 +66,15 @@ class ChatConsumer(AsyncWebsocketConsumer):
         if not message:
             return
 
+        # Keep presence in sync with the anon_id sent in messages
+        self.anon_id = anon_id
+        if self.room_slug in ROOM_PRESENCE:
+            ROOM_PRESENCE[self.room_slug].add(anon_id)
+
         # Run AI moderation in a sync thread pool
         analysis = await self._analyze(message)
 
         if analysis['blocked']:
-            # Only notify the sender — don't broadcast
             await self.send(json.dumps({
                 'type':    'message_blocked',
                 'reason':  analysis['block_reason'],
@@ -54,7 +89,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
         if analysis['risk_level'] in ('high', 'critical'):
             await self._alert(anon_id, message, analysis['risk_level'])
 
-        # Broadcast to all clients in the room
+        # Broadcast message to all clients in the room
         await self.channel_layer.group_send(self.room_group, {
             'type':       'chat.message',
             'message':    message,
@@ -71,6 +106,22 @@ class ChatConsumer(AsyncWebsocketConsumer):
             'sentiment':  event['sentiment'],
             'risk_level': event['risk_level'],
         }))
+
+    async def presence_update(self, event):
+        """Receives presence broadcast and forwards to WebSocket client."""
+        await self.send(json.dumps({
+            'type':         'presence',
+            'active_users': event['active_users'],
+            'room_slug':    event['room_slug'],
+        }))
+
+    async def _broadcast_presence(self):
+        count = len(ROOM_PRESENCE.get(self.room_slug, set()))
+        await self.channel_layer.group_send(self.room_group, {
+            'type':         'presence.update',
+            'active_users': count,
+            'room_slug':    self.room_slug,
+        })
 
     @database_sync_to_async
     def _analyze(self, text):
