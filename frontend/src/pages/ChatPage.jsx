@@ -114,9 +114,19 @@ STRICT RULES:
   }
 };
 
-function CrisisCard() {
+// ── UPDATED: CrisisCard now accepts onDismiss prop ──────────────────────────
+function CrisisCard({ onDismiss }) {
   return (
-    <div style={{ background:'rgba(239,68,68,0.06)', border:'1px solid rgba(239,68,68,0.3)', borderRadius:18, padding:'20px', animation:'fadeUp 0.4s ease both', marginBottom:4 }}>
+    <div style={{ background:'rgba(239,68,68,0.06)', border:'1px solid rgba(239,68,68,0.3)', borderRadius:18, padding:'20px', animation:'fadeUp 0.4s ease both', marginBottom:4, position:'relative' }}>
+      
+      {/* ── Dismiss button ── */}
+      <button
+        onClick={onDismiss}
+        style={{ position:'absolute', top:12, right:12, background:'rgba(255,255,255,0.06)', border:'1px solid rgba(255,255,255,0.1)', borderRadius:6, color:'rgba(255,255,255,0.4)', cursor:'pointer', fontSize:13, width:26, height:26, display:'flex', alignItems:'center', justifyContent:'center', lineHeight:1 }}
+      >
+        ✕
+      </button>
+
       <div style={{ display:'flex', gap:12, alignItems:'flex-start', marginBottom:16 }}>
         <span style={{ fontSize:24, flexShrink:0 }}>🆘</span>
         <div>
@@ -179,27 +189,28 @@ export default function ChatPage({ userId }) {
   const initRoomId  = location.state?.room || 'anxiety';
   const [activeRoom,  setActiveRoom]  = useState(ROOMS.find(r => r.id === initRoomId) || ROOMS[0]);
   const [allMessages, setAllMessages] = useState(SEED_MESSAGES);
-  // Fetch real messages from DB when room changes
-useEffect(() => {
-  fetch(`http://localhost:8000/api/chat/rooms/${activeRoom.id}/messages/`)
-    .then(r => r.json())
-    .then(data => {
-      if (Array.isArray(data) && data.length > 0) {
-        const fetched = data.map(m => ({
-          id: m.id,
-          user: m.sender_anon_id,
-          text: m.content,
-          time: m.created_at,
-          isAI: m.is_ai || m.sender_anon_id === 'AI_BOT' || m.sender_anon_id === 'ADMIN_SUPPORT',
-          isOwn: m.sender_anon_id === userId,
-          sentiment: m.sentiment,
-          risk_level: m.risk_level,
-        }));
-        setAllMessages(prev => ({ ...prev, [activeRoom.id]: fetched }));
-      }
-    })
-    .catch(err => console.error('Failed to fetch messages:', err));
-}, [activeRoom.id, userId]);
+
+  useEffect(() => {
+    fetch(`http://localhost:8000/api/chat/rooms/${activeRoom.id}/messages/`)
+      .then(r => r.json())
+      .then(data => {
+        if (Array.isArray(data) && data.length > 0) {
+          const fetched = data.map(m => ({
+            id: m.id,
+            user: m.sender_anon_id,
+            text: m.content,
+            time: m.created_at,
+            isAI: m.is_ai || m.sender_anon_id === 'AI_BOT' || m.sender_anon_id === 'ADMIN_SUPPORT',
+            isOwn: m.sender_anon_id === userId,
+            sentiment: m.sentiment,
+            risk_level: m.risk_level,
+          }));
+          setAllMessages(prev => ({ ...prev, [activeRoom.id]: fetched }));
+        }
+      })
+      .catch(err => console.error('Failed to fetch messages:', err));
+  }, [activeRoom.id, userId]);
+
   const [input,       setInput]       = useState('');
   const [analyzing,   setAnalyzing]   = useState(false);
   const [aiTyping,    setAiTyping]    = useState(false);
@@ -221,7 +232,6 @@ useEffect(() => {
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior:'smooth' }); }, [currentMsgs.length, activeRoom.id, aiTyping]);
 
-  // ── WebSocket — includes anon_id in URL for presence tracking ───────────
   useEffect(() => {
     let ws;
     let reconnectTimer;
@@ -230,7 +240,6 @@ useEffect(() => {
 
     const connect = () => {
       if (isUnmounted) return;
-      // Pass anon_id as query param so backend can track presence on connect/disconnect
       ws = new WebSocket(`wss://mindbridge-897w.onrender.com/ws/chat/${activeRoom.id}/?anon_id=${userId}`);
       wsRef.current = ws;
 
@@ -240,7 +249,6 @@ useEffect(() => {
         try {
           const data = JSON.parse(e.data);
 
-          // Handle presence updates — store in window for dashboard to read
           if (data.type === 'presence') {
             if (!window.MindBridgeStats) {
               window.MindBridgeStats = { messages:[], blockedCount:0, activeUsers:new Set(), sessionStart:Date.now(), presenceCounts:{} };
@@ -250,9 +258,7 @@ useEffect(() => {
             return;
           }
 
-          // Handle incoming chat messages from other users
           if (data.type === 'message' && data.anon_id !== userId) {
-            // Content-based dedup key so reconnects don't duplicate
             const msgKey = `${data.anon_id}::${data.message}`;
             if (seenIds.has(msgKey)) return;
             seenIds.add(msgKey);
@@ -278,7 +284,6 @@ useEffect(() => {
             window.MindBridgeStats.messages.push({ ...newMsg, room: activeRoom.id });
             window.MindBridgeStats.activeUsers.add(data.anon_id);
 
-            // Cancel AI timer — a real user just replied
             if (aiTimerRef.current) {
               clearTimeout(aiTimerRef.current);
               aiTimerRef.current = null;
@@ -326,7 +331,6 @@ useEffect(() => {
     const analysis = simulateAnalysis(text);
     setAnalyzing(false);
 
-    // ── CRISIS PATH ──────────────────────────────────────────────────────
     if (isCrisisMessage(text)) {
       setShowCrisis(true);
       const userMsg = { id:Date.now(), user:userId, text, isOwn:true, time:new Date().toISOString(), sentiment:'depressed', risk_level:'critical' };
@@ -341,14 +345,12 @@ useEffect(() => {
       return;
     }
 
-    // ── BLOCKED ──────────────────────────────────────────────────────────
     if (analysis.blocked) {
       if (window.MindBridgeStats) window.MindBridgeStats.blockedCount++;
       addMessage({ id:Date.now(), isAI:true, time:new Date().toISOString(), text:"This message was flagged. Please keep this space kind and supportive 💙" });
       return;
     }
 
-    // ── NORMAL MESSAGE ───────────────────────────────────────────────────
     const userMsg = {
       id: Date.now(),
       user: userId,
@@ -485,7 +487,10 @@ useEffect(() => {
               </div>
             )}
             {currentMsgs.map(msg => (<MessageBubble key={msg.id} msg={msg} isOwn={msg.isOwn||msg.user===userId} roomColor={activeRoom.color} />))}
-            {showCrisis && <CrisisCard />}
+
+            {/* ── UPDATED: pass onDismiss so user can close the crisis card ── */}
+            {showCrisis && <CrisisCard onDismiss={() => setShowCrisis(false)} />}
+
             {aiTyping && <TypingIndicator />}
             {analyzing && (
               <div style={{ display:'flex', gap:10, alignItems:'center', color:'rgba(255,255,255,0.26)', fontSize:13, paddingLeft:42 }}>
