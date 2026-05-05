@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
 import { ROOMS, SENTIMENT_COLOR, RISK_COLOR, timeAgo, simulateAnalysis } from '../utils/constants';
+import { pushMessage, incrementBlocked, writeHeartbeat, removeHeartbeat } from '../utils/sharedStats';
 
 const CRISIS_HELPLINES = [
   { name:'iCall (TISS)',          phone:'9152987821',    available:'Mon-Sat, 8am-10pm' },
@@ -114,19 +115,9 @@ STRICT RULES:
   }
 };
 
-// ── UPDATED: CrisisCard now accepts onDismiss prop ──────────────────────────
-function CrisisCard({ onDismiss }) {
+function CrisisCard() {
   return (
-    <div style={{ background:'rgba(239,68,68,0.06)', border:'1px solid rgba(239,68,68,0.3)', borderRadius:18, padding:'20px', animation:'fadeUp 0.4s ease both', marginBottom:4, position:'relative' }}>
-      
-      {/* ── Dismiss button ── */}
-      <button
-        onClick={onDismiss}
-        style={{ position:'absolute', top:12, right:12, background:'rgba(255,255,255,0.06)', border:'1px solid rgba(255,255,255,0.1)', borderRadius:6, color:'rgba(255,255,255,0.4)', cursor:'pointer', fontSize:13, width:26, height:26, display:'flex', alignItems:'center', justifyContent:'center', lineHeight:1 }}
-      >
-        ✕
-      </button>
-
+    <div style={{ background:'rgba(239,68,68,0.06)', border:'1px solid rgba(239,68,68,0.3)', borderRadius:18, padding:'20px', animation:'fadeUp 0.4s ease both', marginBottom:4 }}>
       <div style={{ display:'flex', gap:12, alignItems:'flex-start', marginBottom:16 }}>
         <span style={{ fontSize:24, flexShrink:0 }}>🆘</span>
         <div>
@@ -189,37 +180,28 @@ export default function ChatPage({ userId }) {
   const initRoomId  = location.state?.room || 'anxiety';
   const [activeRoom,  setActiveRoom]  = useState(ROOMS.find(r => r.id === initRoomId) || ROOMS[0]);
   const [allMessages, setAllMessages] = useState(SEED_MESSAGES);
-
-  useEffect(() => {
-    fetch(`http://localhost:8000/api/chat/rooms/${activeRoom.id}/messages/`)
-      .then(r => r.json())
-      .then(data => {
-        if (Array.isArray(data) && data.length > 0) {
-          const fetched = data.map(m => ({
-            id: m.id,
-            user: m.sender_anon_id,
-            text: m.content,
-            time: m.created_at,
-            isAI: m.is_ai || m.sender_anon_id === 'AI_BOT' || m.sender_anon_id === 'ADMIN_SUPPORT',
-            isOwn: m.sender_anon_id === userId,
-            sentiment: m.sentiment,
-            risk_level: m.risk_level,
-          }));
-          setAllMessages(prev => ({ ...prev, [activeRoom.id]: fetched }));
-        }
-      })
-      .catch(err => console.error('Failed to fetch messages:', err));
-  }, [activeRoom.id, userId]);
-
   const [input,       setInput]       = useState('');
   const [analyzing,   setAnalyzing]   = useState(false);
   const [aiTyping,    setAiTyping]    = useState(false);
   const [showCrisis,  setShowCrisis]  = useState(false);
   const [showSidebar, setShowSidebar] = useState(false);
   const [isMobile,    setIsMobile]    = useState(window.innerWidth < 768);
-  const wsRef        = useRef(null);
-  const endRef       = useRef(null);
-  const aiTimerRef   = useRef(null);
+  const wsRef      = useRef(null);
+  const endRef     = useRef(null);
+  const aiTimerRef = useRef(null);
+
+  // ── Heartbeat: register this tab as active ──────────────────────────────
+  useEffect(() => {
+    if (!userId) return;
+    writeHeartbeat(userId);
+    const hb = setInterval(() => writeHeartbeat(userId), 5000);
+    window.addEventListener('beforeunload', removeHeartbeat);
+    return () => {
+      clearInterval(hb);
+      window.removeEventListener('beforeunload', removeHeartbeat);
+      removeHeartbeat();
+    };
+  }, [userId]);
 
   useEffect(() => {
     const onResize = () => setIsMobile(window.innerWidth < 768);
@@ -232,7 +214,9 @@ export default function ChatPage({ userId }) {
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior:'smooth' }); }, [currentMsgs.length, activeRoom.id, aiTyping]);
 
+  // ── WebSocket ────────────────────────────────────────────────────────────
   useEffect(() => {
+    if (!userId) return;
     let ws;
     let reconnectTimer;
     let isUnmounted = false;
@@ -249,14 +233,7 @@ export default function ChatPage({ userId }) {
         try {
           const data = JSON.parse(e.data);
 
-          if (data.type === 'presence') {
-            if (!window.MindBridgeStats) {
-              window.MindBridgeStats = { messages:[], blockedCount:0, activeUsers:new Set(), sessionStart:Date.now(), presenceCounts:{} };
-            }
-            if (!window.MindBridgeStats.presenceCounts) window.MindBridgeStats.presenceCounts = {};
-            window.MindBridgeStats.presenceCounts[data.room_slug] = data.active_users;
-            return;
-          }
+          if (data.type === 'presence') return; // handled by backend
 
           if (data.type === 'message' && data.anon_id !== userId) {
             const msgKey = `${data.anon_id}::${data.message}`;
@@ -278,11 +255,8 @@ export default function ChatPage({ userId }) {
               [activeRoom.id]: [...(prev[activeRoom.id] || []), newMsg]
             }));
 
-            if (!window.MindBridgeStats) {
-              window.MindBridgeStats = { messages:[], blockedCount:0, activeUsers:new Set(), sessionStart:Date.now(), presenceCounts:{} };
-            }
-            window.MindBridgeStats.messages.push({ ...newMsg, room: activeRoom.id });
-            window.MindBridgeStats.activeUsers.add(data.anon_id);
+            // Write to shared store so dashboard sees it
+            pushMessage(newMsg, activeRoom.id);
 
             if (aiTimerRef.current) {
               clearTimeout(aiTimerRef.current);
@@ -294,11 +268,9 @@ export default function ChatPage({ userId }) {
 
       ws.onclose = () => {
         if (!isUnmounted) {
-          console.log('WebSocket closed — reconnecting in 3s...');
           reconnectTimer = setTimeout(connect, 3000);
         }
       };
-
       ws.onerror = () => ws.close();
     };
 
@@ -312,14 +284,9 @@ export default function ChatPage({ userId }) {
 
   const addMessage = useCallback((msg) => {
     setAllMessages(prev => ({ ...prev, [activeRoom.id]: [...(prev[activeRoom.id]||[]), msg] }));
-    if (!window.MindBridgeStats) {
-      window.MindBridgeStats = { messages:[], blockedCount:0, activeUsers:new Set(), sessionStart:Date.now(), presenceCounts:{} };
-    }
-    window.MindBridgeStats.messages.push({ ...msg, room: activeRoom.id });
-    if (!msg.isAI) {
-      window.MindBridgeStats.activeUsers.add(msg.user || userId);
-    }
-  }, [activeRoom.id, userId]);
+    // Write every message (user + AI) to shared localStorage store
+    pushMessage(msg, activeRoom.id);
+  }, [activeRoom.id]);
 
   const sendMessage = useCallback(async () => {
     if (!input.trim() || analyzing) return;
@@ -331,6 +298,7 @@ export default function ChatPage({ userId }) {
     const analysis = simulateAnalysis(text);
     setAnalyzing(false);
 
+    // ── CRISIS PATH ──────────────────────────────────────────────────────
     if (isCrisisMessage(text)) {
       setShowCrisis(true);
       const userMsg = { id:Date.now(), user:userId, text, isOwn:true, time:new Date().toISOString(), sentiment:'depressed', risk_level:'critical' };
@@ -345,12 +313,14 @@ export default function ChatPage({ userId }) {
       return;
     }
 
+    // ── BLOCKED ──────────────────────────────────────────────────────────
     if (analysis.blocked) {
-      if (window.MindBridgeStats) window.MindBridgeStats.blockedCount++;
+      incrementBlocked();
       addMessage({ id:Date.now(), isAI:true, time:new Date().toISOString(), text:"This message was flagged. Please keep this space kind and supportive 💙" });
       return;
     }
 
+    // ── NORMAL MESSAGE ───────────────────────────────────────────────────
     const userMsg = {
       id: Date.now(),
       user: userId,
@@ -487,10 +457,7 @@ export default function ChatPage({ userId }) {
               </div>
             )}
             {currentMsgs.map(msg => (<MessageBubble key={msg.id} msg={msg} isOwn={msg.isOwn||msg.user===userId} roomColor={activeRoom.color} />))}
-
-            {/* ── UPDATED: pass onDismiss so user can close the crisis card ── */}
-            {showCrisis && <CrisisCard onDismiss={() => setShowCrisis(false)} />}
-
+            {showCrisis && <CrisisCard />}
             {aiTyping && <TypingIndicator />}
             {analyzing && (
               <div style={{ display:'flex', gap:10, alignItems:'center', color:'rgba(255,255,255,0.26)', fontSize:13, paddingLeft:42 }}>

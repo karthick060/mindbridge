@@ -22,6 +22,7 @@ class Message(models.Model):
     is_blocked     = models.BooleanField(default=False)
     block_reason   = models.CharField(max_length=60, blank=True)
     is_ai          = models.BooleanField(default=False)
+    is_resolved    = models.BooleanField(default=False)
     created_at     = models.DateTimeField(auto_now_add=True)
     class Meta:
         db_table = 'messages'
